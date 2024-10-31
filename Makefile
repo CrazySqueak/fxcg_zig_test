@@ -48,7 +48,7 @@ $(BUILD_DIR)/%.o: $(BUILD_DIR)/generated/%.c
 # Zig -> C
 $(BUILD_DIR)/generated/zig.c: FORCE
 	@mkdir -p $(dir $@)
-	zig build-obj zigstub.zig -ofmt=c -femit-bin=$@ $(INCLUDES) $(ZIGFLAGS)
+	zig build-obj zigstub.zig -lc -ofmt=c -femit-bin=$@ $(INCLUDES) $(ZIGFLAGS)
 
 # $(BUILD_DIR)/generated/src/%.c: src/%.zig
 # 	@mkdir -p $(dir $@)
