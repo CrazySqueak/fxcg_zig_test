@@ -14,8 +14,8 @@ const LogBuffer = struct {
     buffer: [BUFFER_SIZE]u8,
     
     pub const FormatInfo = packed struct {
-        mode: u1,
-        colour: u3,
+        mode: u1 = fxcg.display.TEXT_MODE_NORMAL,
+        colour: u3 = fxcg.display.TEXT_COLOR_BLACK,
         _reserved: u4 = 0,
     };
     pub const BUFFER_COLS = 21;
@@ -86,7 +86,7 @@ const LogBuffer = struct {
     }
     /// Move to the start of the next line, blanking the remainder.
     pub fn next_line(self: *Self) void {
-        while (get_col_for(self.cursor) != 0) self.putchar(' ');
+        while (get_col_for(self.cursor) != 0) self.putchar('\x00');
     }
     
     pub const Reader = struct {
@@ -114,18 +114,18 @@ const LogBuffer = struct {
                 self.line = new_pos;
             } else {
                 // Backwards
-                var new_pos: i17 = old_pos-lines;
+                var new_pos: i17 = @as(i17,old_pos)-lines;
                 if (old_pos >= boundrary and new_pos < boundrary) return error.CursorOutOfBounds;
                 // Handle wraparound
                 if (new_pos < 0) {
-                    const wrapped: u16 = BUFFER_LINES - -new_pos;
+                    const wrapped: u16 = BUFFER_LINES - @as(u16,@intCast(-new_pos));
                     // (we wrapped around and immediately underran)
                     if (wrapped < boundrary) return error.CursorOutOfBounds;
                     // We're ok
                     new_pos = wrapped;
                 }
                 // All good
-                self.line = new_pos;
+                self.line = @intCast(new_pos);
             }
         }
         /// Move the cursor by the given number of lines.
@@ -137,7 +137,7 @@ const LogBuffer = struct {
                     // Oops
                     // Move one-by-one
                     for (0..lines) |i| {
-                        self.move_cursor(1,reverse) catch return i;
+                        self.move_cursor(1,reverse) catch return @intCast(i);
                     }
                     // ??? How did we get here?
                     return lines;
@@ -148,59 +148,118 @@ const LogBuffer = struct {
         
         /// Get the text of the current line pointed by the cursor
         pub fn get_line_text(self: *const RSelf) *const [BUFFER_COLS]u8 {
-            return &self.logger.buffer[self.line*BUFFER_ROW_LEN..][0..BUFFER_COLS];
+            return self.logger.buffer[self.line*BUFFER_ROW_LEN..][0..BUFFER_COLS];
         }
         /// Get the formatting info of the current line pointed to by the cursor
         pub fn get_format_info(self: *const RSelf) FormatInfo {
-            const data: [@sizeOf(FormatInfo)]u8 = self.logger.get_line_fmt_ptr(self.line);
+            const data: [@sizeOf(FormatInfo)]u8 = @constCast(self.logger).get_line_fmt_ptr(self.line).*;
             return @bitCast(data);
         }
         
         const RSelf = @This();
     };
     pub fn reader(self: *const Self) Reader {
-        return .{ .logger=self, .line=get_line_for(self.cursor) };
+        var end_line: i17 = get_line_for(self.cursor); end_line -= 1;
+        if (end_line < 0) end_line += BUFFER_LINES;
+        return .{ .logger=self, .line=@intCast(end_line) };
     }
 };
 var logger = LogBuffer.new();
 
+pub fn display_log() void {
+    var reader = logger.reader();
+    const LINES_PER_SCREEN = 7;
+    // We start on the final line, so we should seek upwards to include the others
+    _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,true);
+    while(true) {
+        fxcg.display.Bdisp_AllClr_VRAM();
+        // Display (up to) x lines
+        for (1..LINES_PER_SCREEN+1) |_ln| { const line: u16 = @intCast(_ln);
+            // Read text into buffer
+            var buf: [2+LogBuffer.BUFFER_COLS:0]u8 = undefined;
+            @memset(buf[0..2], '-');  // -- prefix
+            @memcpy(buf[2..][0..LogBuffer.BUFFER_COLS], reader.get_line_text());
+            buf[buf.len] = '\x00';  // null terminator
+            // Get format info
+            const format = reader.get_format_info();
+            // Display line
+            fxcg.display.PrintXY(1,line, &buf, format.mode, format.colour);
+            
+            // Advance cursor
+            reader.move_cursor(1, false) catch |e|switch(e){
+                error.CursorOutOfBounds => {
+                    // No more lines
+                    // Move cursor back
+                    _=reader.move_cursor_saturating(line-1,true);
+                    // Abort early
+                    break;
+                },
+            };
+        } else {
+            // All done. Move cursor back
+            _=reader.move_cursor_saturating(LINES_PER_SCREEN,true);
+        }
+        
+        // Use GetKey to wait for a key
+        var key: c_int = undefined;
+        _ = fxcg.keyboard.GetKey(&key);
+        switch (key) {
+            fxcg.keyboard.KEY_CTRL_UP => {
+                // Move up one screen (almost)
+                _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,true);
+            },
+            fxcg.keyboard.KEY_CTRL_DOWN => {
+                // Move down one screen (almost)
+                _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,false);
+            },
+            fxcg.keyboard.KEY_CTRL_LEFT => {
+                // Move up one line
+                _=reader.move_cursor_saturating(1,true);
+            },
+            fxcg.keyboard.KEY_CTRL_RIGHT => {
+                // Move down one line
+                _=reader.move_cursor_saturating(1,false);
+            },
+            
+            fxcg.keyboard.KEY_CTRL_EXIT => {
+                // Exit
+                break;
+            },
+            // TODO: Support saving?
+            else => {},  // do nothing
+        }
+    }
+}
+
 pub export fn main() void {
     logger.set_line_format(.{ .mode = fxcg.display.TEXT_MODE_NORMAL, .colour = fxcg.display.TEXT_COLOR_BLACK});
     try logger.print("Starting AddIn...\n", .{});
+    _=try logger.puts("Beep Boop...\n");
+    display_log();
     
     // Call main
     const result = program.main();
     // Error handling
     _ = result catch |err|{
-        fxcg.display.Bdisp_AllClr_VRAM();
-        fxcg.display.PrintXY(1,1, "--main() returned error", fxcg.display.TEXT_MODE_NORMAL, fxcg.display.TEXT_COLOR_RED);
-        var errbuf: [2+21+1]u8 = undefined;
-        const errtext: [*:0]const u8 = std.fmt.bufPrintZ(&errbuf, "--{s}", .{ @errorName(err) }) catch efmt: {
-            // Out of space
-            errbuf[2+21] = 0;  // add null terminator
-            errbuf[2+21-1] = '.';  // add ellipsis
-            errbuf[2+21-2] = '.';
-            // And return errbuf
-            break :efmt @ptrCast(&errbuf);
-        };
-        fxcg.display.PrintXY(1,2, errtext, fxcg.display.TEXT_MODE_NORMAL, fxcg.display.TEXT_COLOR_RED);
+        logger.next_line();
+        logger.set_line_format(.{.colour = fxcg.display.TEXT_COLOR_RED});
+        try logger.print("main() returned err:\n{s}", .{@errorName(err)});
+        // TODO: Error return trace?
     };
     
-    fxcg.display.PrintXY(1,7, "--Press EXE to exit", fxcg.display.TEXT_MODE_NORMAL, fxcg.display.TEXT_COLOR_BLACK);
-    
-    while (true) {
-        var key: c_int = undefined;
-        _ = fxcg.keyboard.GetKey(&key);
-
-        if (key == fxcg.keyboard.KEY_CTRL_EXE) {
-            break;
-        }
-    }
- 
-    return;
+    logger.next_line();
+    logger.set_line_format(.{});
+    _=try logger.puts("main() has exited.\nPress MENU to exit.\n");
+    display_log();
 }
 
-pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, something_else: ?usize) noreturn {
-    _ = msg; _ = error_return_trace; _ = something_else;
-    while (true) {}
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    logger.next_line();
+    logger.set_line_format(.{ .colour = fxcg.display.TEXT_COLOR_RED });
+    logger.print("Panic: {s}\n", .{msg}) catch {};
+    display_log(); _ = error_return_trace;
+    while (true) {
+        var key: c_int = undefined;
+        _=fxcg.keyboard.GetKey(&key);
+    }
 }
