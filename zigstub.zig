@@ -11,7 +11,7 @@ const LogBuffer = struct {
     cursor: u16,
     /// The buffer containing log data, in row-major order.
     /// Columns 0-20 (inclusive) for a row are the text. Columns 21+ are formatting data.
-    buffer: [BUFFER_LINES*BUFFER_ROW_LEN]u8,
+    buffer: [BUFFER_SIZE]u8,
     
     pub const FormatInfo = packed struct {
         mode: u1,
@@ -20,7 +20,8 @@ const LogBuffer = struct {
     };
     pub const BUFFER_COLS = 21;
     pub const BUFFER_ROW_LEN = BUFFER_COLS + @sizeOf(FormatInfo);
-    pub const BUFFER_LINES = 1000;
+    pub const BUFFER_LINES = 300;
+    pub const BUFFER_SIZE: u16 = @intCast(BUFFER_LINES*BUFFER_ROW_LEN);
     const Self = @This();
     
     fn new() Self {
@@ -36,13 +37,13 @@ const LogBuffer = struct {
         return pos%BUFFER_ROW_LEN;
     }
     
-    fn get_line_fmt_ptr(self: *Self, pos: u16) *[@sizeOf(FormatInfo)]u8 {
-        return self.buffer[get_line_for(pos)..][BUFFER_COLS..][0..@sizeOf(FormatInfo)];
+    fn get_line_fmt_ptr(self: *Self, line: u16) *[@sizeOf(FormatInfo)]u8 {
+        return self.buffer[line*BUFFER_ROW_LEN..][BUFFER_COLS..][0..@sizeOf(FormatInfo)];
     }
     /// Set the formatting for the current line
     pub fn set_line_format(self: *Self, format: FormatInfo) void {
         const data: [@sizeOf(FormatInfo)]u8 = @bitCast(format);
-        @memcpy(self.get_line_fmt_ptr(self.cursor), &data);
+        @memcpy(self.get_line_fmt_ptr(get_line_for(self.cursor)), &data);
     }
     
     /// Put a character at the current position, then advance by 1 column.
@@ -67,7 +68,7 @@ const LogBuffer = struct {
     }
     
     pub const Writer = std.io.GenericWriter(*Self, error{}, puts);
-    pub fn writer(self: *Self) Writer {
+    pub inline fn writer(self: *Self) Writer {
         return .{ .context=self };
     }
     
@@ -76,12 +77,12 @@ const LogBuffer = struct {
         const old_pos = self.cursor;
         self.cursor += 1;
         while (get_col_for(self.cursor) >= BUFFER_COLS) self.cursor += 1;
-        self.cursor %= @intCast(self.buffer.len);
+        self.cursor %= @intCast(BUFFER_SIZE);
         const new_pos = self.cursor;
         
         // Copy down the formatting info (if needed)
         if (get_line_for(old_pos) != get_line_for(new_pos))
-            @memcpy(self.get_line_fmt_ptr(new_pos), self.get_line_fmt_ptr(old_pos));
+            @memcpy(self.get_line_fmt_ptr(get_line_for(new_pos)), self.get_line_fmt_ptr(get_line_for(old_pos)));
     }
     /// Move to the start of the next line, blanking the remainder.
     pub fn next_line(self: *Self) void {
@@ -90,10 +91,76 @@ const LogBuffer = struct {
     
     pub const Reader = struct {
         logger: *const Self,
-        cursor: i17,
+        line: u16,
+        
+        /// Move the cursor by the given number of lines.
+        /// Returns error.CursorOutOfBounds if this crosses the writer. If an error is returned, the cursor will be left at its old position.
+        /// If `reverse` is true, moves backwards instead of forwards.
+        pub fn move_cursor(self: *RSelf, lines: u16, comptime reverse: bool) !void {
+            const old_pos = self.line; const boundrary = get_line_for(self.logger.*.cursor);
+            if (!reverse) {
+                // Forwards
+                var new_pos = old_pos+lines;
+                if (old_pos < boundrary and new_pos >= boundrary) return error.CursorOutOfBounds;
+                // Handle wraparound
+                if (new_pos >= BUFFER_LINES) {
+                    const wrapped = new_pos-BUFFER_LINES;
+                    // (we wrapped around and immediately overran)
+                    if (wrapped >= boundrary) return error.CursorOutOfBounds;
+                    // We're ok
+                    new_pos = wrapped;
+                }
+                // All good
+                self.line = new_pos;
+            } else {
+                // Backwards
+                var new_pos: i17 = old_pos-lines;
+                if (old_pos >= boundrary and new_pos < boundrary) return error.CursorOutOfBounds;
+                // Handle wraparound
+                if (new_pos < 0) {
+                    const wrapped: u16 = BUFFER_LINES - -new_pos;
+                    // (we wrapped around and immediately underran)
+                    if (wrapped < boundrary) return error.CursorOutOfBounds;
+                    // We're ok
+                    new_pos = wrapped;
+                }
+                // All good
+                self.line = new_pos;
+            }
+        }
+        /// Move the cursor by the given number of lines.
+        /// If this cannot be done, moves it as far as possible.
+        /// Returns the number of lines travelled.
+        pub fn move_cursor_saturating(self: *RSelf, lines: u16, comptime reverse: bool) u16 {
+            self.move_cursor(lines,reverse) catch |e|switch(e){
+                error.CursorOutOfBounds => {
+                    // Oops
+                    // Move one-by-one
+                    for (0..lines) |i| {
+                        self.move_cursor(1,reverse) catch return i;
+                    }
+                    // ??? How did we get here?
+                    return lines;
+                },
+            };
+            return lines;
+        }
+        
+        /// Get the text of the current line pointed by the cursor
+        pub fn get_line_text(self: *const RSelf) *const [BUFFER_COLS]u8 {
+            return &self.logger.buffer[self.line*BUFFER_ROW_LEN..][0..BUFFER_COLS];
+        }
+        /// Get the formatting info of the current line pointed to by the cursor
+        pub fn get_format_info(self: *const RSelf) FormatInfo {
+            const data: [@sizeOf(FormatInfo)]u8 = self.logger.get_line_fmt_ptr(self.line);
+            return @bitCast(data);
+        }
         
         const RSelf = @This();
     };
+    pub fn reader(self: *const Self) Reader {
+        return .{ .logger=self, .line=get_line_for(self.cursor) };
+    }
 };
 var logger = LogBuffer.new();
 
