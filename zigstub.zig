@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const modules = struct {
     pub const fxcg_c = @import("fxcg_c.zig");
-    pub const cgutil = @import("cgutil.zig");
+    pub const cgutil = @import("cgutil/cgutil.zig");
     
     pub const logbuf = @import("logbuf.zig");
     

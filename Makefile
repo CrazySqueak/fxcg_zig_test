@@ -20,10 +20,12 @@ ZIGFLAGS := --gc-sections -target powerpc-freestanding
 ZIG_LIB_DIR := $(shell zig env | jq -r .lib_dir)
 
 LIBS := -L$(LIBS_PATH) -lc -lfxcg -lgcc
-INCLUDES := -I$(INCLUDES_PATH) -I$(ZIG_LIB_DIR) -I$(shell pwd) -isystem workaround
+INCLUDES := -I$(INCLUDES_PATH) -I$(ZIG_LIB_DIR) -Icgutil -isystem workaround
 
 BUILD_DIR := build
-SRC_OBJS := generated/zig.o root/cgutil_c.o # zigbuiltin/compiler_rt.o
+UTIL_OBJS := $(patsubst cgutil/%.c,util/%.o,$(wildcard cgutil/*.c))  # util/openmainmenu.o
+SRC_OBJS := generated/zig.o
+OBJECTS := $(SRC_OBJS) $(UTIL_OBJS) # zigbuiltin/compiler_rt.o
 
 TARGET_NAME := target
 APP_NAME := fxcg_example
@@ -36,7 +38,7 @@ $(TARGET_NAME).g3a: $(BUILD_DIR)/out.bin
 	@mkdir -p $(dir $@)
 	$(TOOL_BIN_PATH)/mkg3a -n basic:$(APP_NAME) $^ $@
 
-$(BUILD_DIR)/out.bin: $(addprefix $(BUILD_DIR)/,$(SRC_OBJS))
+$(BUILD_DIR)/out.bin: $(addprefix $(BUILD_DIR)/,$(OBJECTS))
 	@mkdir -p $(dir $@)
 	$(LD) $^ $(LDFLAGS) $(LIBS) -o $@
 
@@ -45,7 +47,7 @@ $(BUILD_DIR)/generated/%.o: $(BUILD_DIR)/generated/%.c
 	@mkdir -p $(dir $@)
 	$(GCC) -MMD -MP -MF $(BUILD_DIR)/$*.d -DTARGET_PRIZM=1 $(CFLAGS) -Wno-all $(INCLUDES) -c $^ -o $@
 
-$(BUILD_DIR)/root/%.o: %.c
+$(BUILD_DIR)/util/%.o: cgutil/%.c
 	@mkdir -p $(dir $@)
 	$(GCC) -MMD -MP -MF $(BUILD_DIR)/$*.d -DTARGET_PRIZM=1 $(CFLAGS) -Wno-all $(INCLUDES) -c $^ -o $@
 

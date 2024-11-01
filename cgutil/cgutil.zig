@@ -1,5 +1,7 @@
 const fxcg = @import("root").modules.fxcg_c;
-const c = @cImport({ @cInclude("./cgutil_c.h"); });
+const c = struct {
+    pub const open_main_menu = @cImport({ @cInclude("openmainmenu.h"); });
+};
 
 pub const ui = struct {
     pub const status_bar = struct {
@@ -57,7 +59,7 @@ pub const ui = struct {
     /// Force-open the Main Menu
     /// Useful if you've received an input from a non-blocking method and need to open the menu
     pub inline fn openMainMenu() void {
-        c.SaveAndOpenMainMenu();
+        c.open_main_menu.SaveAndOpenMainMenu();
     }
 };
 
