@@ -1,5 +1,6 @@
 const std = @import("std");
 const fxcg = @import("root").modules.fxcg_c;
+const cgutil = @import("root").modules.cgutil;
 
 /// A buffer for printing debug information to.
 /// This acts as a ring buffer, so if it fills up, new log messages will
@@ -190,11 +191,16 @@ pub fn stdLogFn(
 
 /// Display the log buffer on-screen for the user to read through
 pub fn display_log() void {
+    // Enable status area (and store old value so we can undo it later)
+    const old_status_mode = cgutil.ui.status_bar.getMode();
+    cgutil.ui.status_bar.switchMode(.always);
+    
+    // Configure reader
     var reader = logger.reader();
     const LINES_PER_SCREEN = 7;
     // We start on the final line, so we should seek upwards to include the others
     _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,true);
-    while(true) {
+    while(true) {  // main loop
         fxcg.display.Bdisp_AllClr_VRAM();
         // Display (up to) x lines
         for (1..LINES_PER_SCREEN+1) |_ln| { const line: u16 = @intCast(_ln);
@@ -224,8 +230,7 @@ pub fn display_log() void {
         }
         
         // Use GetKey to wait for a key
-        var key: c_int = undefined;
-        _ = fxcg.keyboard.GetKey(&key);
+        const key = cgutil.ui.getKey();
         switch (key) {
             fxcg.keyboard.KEY_CTRL_LEFT => {
                 // Move up one screen (almost)
@@ -252,4 +257,7 @@ pub fn display_log() void {
             else => {},  // do nothing
         }
     }
+    
+    // Restore the old mode
+    cgutil.ui.status_bar.switchMode(old_status_mode);
 }

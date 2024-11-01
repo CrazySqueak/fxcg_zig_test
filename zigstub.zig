@@ -2,6 +2,8 @@ const std = @import("std");
 
 pub const modules = struct {
     pub const fxcg_c = @import("fxcg_c.zig");
+    pub const cgutil = @import("cgutil.zig");
+    
     pub const logbuf = @import("logbuf.zig");
     
     pub const program_root = @import("src/main.zig");
@@ -18,6 +20,7 @@ pub const std_options = .{
 };
 
 pub export fn main() void {
+    // Setup logger
     logger.set_line_format(.{ .mode = fxcg.display.TEXT_MODE_NORMAL, .colour = fxcg.display.TEXT_COLOR_BLACK});
     logger.print("Starting AddIn...\n", .{});
     _=logger.puts("Beep Boop...\n");
