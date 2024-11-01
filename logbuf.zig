@@ -1,5 +1,5 @@
 const std = @import("std");
-const fxcg = @import("fxcg_c.zig");
+const fxcg = @import("root").modules.fxcg_c;
 
 /// A buffer for printing debug information to.
 /// This acts as a ring buffer, so if it fills up, new log messages will
@@ -51,7 +51,7 @@ const LogBuffer = struct {
     }
     /// Write the given string into the buffer at the current position.
     /// Correctly handles '\n' (but no other control codes).
-    pub fn puts(self: *Self, string: []const u8) !usize {
+    pub fn puts(self: *Self, string: []const u8) usize {
         var i: usize = 0;
         for (string) |c| {
             if (c == '\n') self.next_line()
@@ -61,11 +61,12 @@ const LogBuffer = struct {
         return i;
     }
     /// Print to the buffer using std.fmt
-    pub fn print(self: *Self, comptime fmt: []const u8, args: anytype) !void {
-        try std.fmt.format(self.writer(), fmt, args);
+    pub fn print(self: *Self, comptime fmt: []const u8, args: anytype) void {
+        std.fmt.format(self.writer(), fmt, args) catch unreachable;
     }
     
-    pub const Writer = std.io.GenericWriter(*Self, error{}, puts);
+    fn _puts_writer(self: *Self, string: []const u8) error{}!usize { return @call(.always_inline, puts, .{self, string}); }
+    pub const Writer = std.io.GenericWriter(*Self, error{}, _puts_writer);
     pub inline fn writer(self: *Self) Writer {
         return .{ .context=self };
     }
@@ -180,12 +181,10 @@ pub fn stdLogFn(
     };
     const prefix_txt = if (scope == .default) "." else " " ++ @tagName(scope) ++ ".";
     
-    log: {
-        logger.set_line_format(.{ .colour=level_col });
-        logger.print("{s}{s}", .{ level_txt, prefix_txt }) catch break :log;
-        logger.print(format, args) catch break :log;
-        logger.next_line();
-    }
+    logger.set_line_format(.{ .colour=level_col });
+    logger.print("{s}{s}", .{ level_txt, prefix_txt });
+    logger.print(format, args);
+    logger.next_line();
     // Done
 }
 
