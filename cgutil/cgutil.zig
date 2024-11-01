@@ -63,7 +63,7 @@ pub const input = struct {
             }
         }
         break :gkdef .{ .@"enum" = .{
-            .tag_type = c_int,
+            .tag_type = u16,
             .fields = enum_fields,
             .decls = &[0]std.builtin.Type.Declaration{},
             .is_exhaustive = false,  // non-exhaustive
@@ -84,4 +84,57 @@ pub const input = struct {
         // All done
         return @enumFromInt(key);
     }
+    
+    pub const PrgmKey = @Type(pkdef:{
+        // We use reflection to obtain the defined keycode constants
+        const fxcg_keyboard_ty = @typeInfo(fxcg.keyboard).@"struct";
+        var enum_fields: []const std.builtin.Type.EnumField = &.{};
+        
+        @setEvalBranchQuota(10_000);
+        for (fxcg_keyboard_ty.decls) |decl| {
+            if (std.mem.startsWith(u8,decl.name,"KEY_PRGM_")) {
+                enum_fields = enum_fields ++ .{.{ .name=decl.name[9..], .value=@field(fxcg.keyboard,decl.name) }};
+            }
+        }
+        break :pkdef .{ .@"enum" = .{
+            .tag_type = u8,
+            .fields = enum_fields,
+            .decls = &[0]std.builtin.Type.Declaration{},
+            .is_exhaustive = false,  // non-exhaustive
+        }};
+    });
+    
+    /// The keyupdate() family of non-blocking input functions
+    pub const keyupdate = struct {
+        /// Should be called once per frame, before reading input, in order to update the input values.
+        pub inline fn key_update() void {
+            c.keyupdate.keyupdate();
+        }
+        
+        inline fn keydownlast(key: PrgmKey) bool {
+            // No assert is needed (even if key is 255, the word checked is based on the row number (%10), not the column number)
+            return c.keyupdate.keydownlast(@intFromEnum(key)) != 0;
+        }
+        inline fn keydown2ndlast(key: PrgmKey) bool {
+            // No assert is needed (even if key is 255, the word checked is based on the row number (%10), not the column number)
+            return c.keyupdate.keydownhold(@intFromEnum(key)) != 0;
+        }
+        
+        /// Returns true if the key was down during the last keyupdate() call.
+        pub inline fn key_down(key: PrgmKey) bool {
+            return keydownlast(key);
+        }
+        /// Returns true if the key was down during the last two keyupdate() calls.
+        pub inline fn key_held(key: PrgmKey) bool {
+            return keydownlast(key) and keydown2ndlast(key);
+        }
+        /// Returns true if the key was down during the last keyupdate() call, but not the one before.
+        pub inline fn key_pressed(key: PrgmKey) bool {
+            return keydownlast(key) and !keydown2ndlast(key);
+        }
+        /// Returns true if the key was down during the second-last keyupdate() call, but not the one after.
+        pub inline fn key_released(key: PrgmKey) bool {
+            return keydown2ndlast(key) and !keydownlast(key);
+        }
+    };
 };
