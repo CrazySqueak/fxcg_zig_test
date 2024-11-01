@@ -110,6 +110,14 @@ pub const input = struct {
         pub inline fn key_update() void {
             c.keyupdate.keyupdate();
         }
+        /// Open the Main Menu if the MENU key is pressed. Should be called after key_update() unless you have a good reason not to.
+        pub inline fn handle_menu_key() void {
+            if (keydownlast(PrgmKey.MENU)) {
+                ui.openMainMenu();  // open the menu
+                // Update state to match now that the menu is closed
+                key_update();
+            }
+        }
         
         inline fn keydownlast(key: PrgmKey) bool {
             // No assert is needed (even if key is 255, the word checked is based on the row number (%10), not the column number)
