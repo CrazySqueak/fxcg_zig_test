@@ -3,6 +3,7 @@ const fxcg = @import("root").modules.fxcg_c;
 const c = struct {
     pub const open_main_menu = @cImport({ @cInclude("openmainmenu.h"); });
     pub const keyupdate = @cImport({ @cInclude("keyupdate.h"); });
+    pub const rtc_datetime = @cImport({ @cInclude("rtc_datetime.h"); });
 };
 
 pub const ui = struct {
@@ -143,6 +144,77 @@ pub const input = struct {
         /// Returns true if the key was down during the second-last keyupdate() call, but not the one after.
         pub inline fn key_released(key: PrgmKey) bool {
             return keydown2ndlast(key) and !keydownlast(key);
+        }
+    };
+};
+
+pub const rtc = struct {
+    pub const date = struct {
+        pub const DayOfWeek = enum(u3) {
+            monday = 1,
+            tuesday = 2,
+            wednesday = 3,
+            thursday = 4,
+            friday = 5,
+            saturday = 6,
+            sunday = 7,
+        };
+        pub const RTCDateTime = struct {
+            day_of_week: DayOfWeek,
+            date: Date, time: Time,
+        };
+        pub const Date = struct {
+            day: u5 = 1, month: u4 = 1, year: u14 = 2024,
+        };
+        pub const Time = struct {
+            second: u6 = 0, minute: u6 = 0, hour: u5 = 0,
+        };
+        
+        
+        /// Get the current RTC date/time
+        pub fn get_date() RTCDateTime {
+            var rtc_setup: c.rtc_datetime.rtc_setup = undefined;
+            c.rtc_datetime.RTC_Read(&rtc_setup);
+            
+            return .{
+                .day_of_week = @enumFromInt(rtc_setup.dayofweek),
+                .time = .{ 
+                    .second = @intCast(rtc_setup.second),
+                    .minute = @intCast(rtc_setup.minute),
+                    .hour = @intCast(rtc_setup.hour),
+                },
+                .date = .{
+                    .day = @intCast(rtc_setup.day),
+                    .month = @intCast(rtc_setup.month),
+                    .year = @intCast(rtc_setup.year),
+                },
+            };
+        }
+        /// Set the current RTC date/time
+        pub fn set_date(new: RTCDateTime) void {
+            const rtc_setup: c.rtc_datetime.rtc_setup = .{
+                .dayofweek = @intFromEnum(new.day_of_week),
+                .second = new.time.second,
+                .minute = new.time.minute,
+                .hour = new.time.hour,
+                .day = new.date.day,
+                .month = new.date.month,
+                .year = new.date.year,
+            };
+            c.rtc_datetime.RTC_Set(&rtc_setup);
+        }
+        
+        /// Simple sanity check for RTC settings (which are wiped if you segfault or change the batteries).
+        /// Returns true if the RTC's set date is during or after the year 2024 A.D.
+        /// As time travel nor FTL travel have been invented yet (and likely never will be), the date being set to before 2024 (when this function was written) is clearly a misconfiguration.
+        pub inline fn is_rtc_sane() bool {
+            return get_date().date.year < 2024;
+        }
+        /// A version of is_rtc_date_sane that returns an error if the date is not sane
+        pub fn get_date_sane() !RTCDateTime {
+            const rtc_date = get_date();
+            if (rtc_date.date.year < 2024) return error.RtcYearInPast
+            else return rtc_date;
         }
     };
 };
