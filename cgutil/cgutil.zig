@@ -1,6 +1,8 @@
+const std = @import("std");
 const fxcg = @import("root").modules.fxcg_c;
 const c = struct {
     pub const open_main_menu = @cImport({ @cInclude("openmainmenu.h"); });
+    pub const keyupdate = @cImport({ @cInclude("keyupdate.h"); });
 };
 
 pub const ui = struct {
@@ -10,7 +12,7 @@ pub const ui = struct {
             disable,
             /// Only visible if explicitly drawn using DisplayStatusArea
             explicit,
-            /// Automatically drawn when the wrapper functions are invoked, or if DisplayStatusArea is called.
+            /// Automatically drawn during GetKey and several screen-display wrapper functions here, or if DisplayStatusArea is called.
             always,
         };
         var current_mode: Mode = .explicit;  // (default, i think)
@@ -41,21 +43,6 @@ pub const ui = struct {
         }
     };
     
-    /// A wrapper for GetKey.
-    /// Blocks until the user presses a key.
-    /// See https://prizm.cemetech.net/Syscalls/Keyboard/GetKey/ for details.
-    pub fn getKey() c_int {
-        // Draw status bar (sometimes it doesn't get drawn for some reason)
-        if (status_bar.getMode() == .always) fxcg.display.DisplayStatusArea();
-        
-        // Call GetKey
-        var key: c_int = undefined;
-        _=fxcg.keyboard.GetKey(&key);
-        
-        // All done
-        return key;
-    }
-    
     /// Force-open the Main Menu
     /// Useful if you've received an input from a non-blocking method and need to open the menu
     pub inline fn openMainMenu() void {
@@ -63,4 +50,38 @@ pub const ui = struct {
     }
 };
 
-// TODO
+pub const input = struct {
+    pub const GetKey_Result = @Type(gkdef:{
+        // We use reflection to obtain the defined keycode constants
+        const fxcg_keyboard_ty = @typeInfo(fxcg.keyboard).@"struct";
+        var enum_fields: []const std.builtin.Type.EnumField = &.{};
+        
+        @setEvalBranchQuota(10_000);
+        for (fxcg_keyboard_ty.decls) |decl| {
+            if (std.mem.startsWith(u8, decl.name, "KEY_") and !std.mem.startsWith(u8,decl.name,"KEY_PRGM")) {
+                enum_fields = enum_fields ++ .{.{ .name=decl.name[4..], .value=@field(fxcg.keyboard,decl.name) }};
+            }
+        }
+        break :gkdef .{ .@"enum" = .{
+            .tag_type = c_int,
+            .fields = enum_fields,
+            .decls = &[0]std.builtin.Type.Declaration{},
+            .is_exhaustive = false,  // non-exhaustive
+        }};
+    });
+    
+    /// A wrapper for GetKey.
+    /// Blocks until the user presses a key.
+    /// See https://prizm.cemetech.net/Syscalls/Keyboard/GetKey/ for details.
+    pub fn getKey() GetKey_Result {
+        // Draw status bar (sometimes it doesn't get drawn for some reason)
+        if (ui.status_bar.getMode() == .always) fxcg.display.DisplayStatusArea();
+        
+        // Call GetKey
+        var key: c_int = undefined;
+        _=fxcg.keyboard.GetKey(&key);
+        
+        // All done
+        return @enumFromInt(key);
+    }
+};

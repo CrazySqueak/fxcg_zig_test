@@ -230,26 +230,26 @@ pub fn display_log() void {
         }
         
         // Use GetKey to wait for a key
-        const key = cgutil.ui.getKey();
+        const key = cgutil.input.getKey();
         switch (key) {
-            fxcg.keyboard.KEY_CTRL_LEFT => {
+            cgutil.input.GetKey_Result.CTRL_LEFT => {
                 // Move up one screen (almost)
                 _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,true);
             },
-            fxcg.keyboard.KEY_CTRL_RIGHT => {
+            cgutil.input.GetKey_Result.CTRL_RIGHT => {
                 // Move down one screen (almost)
                 _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,false);
             },
-            fxcg.keyboard.KEY_CTRL_UP => {
+            cgutil.input.GetKey_Result.CTRL_UP => {
                 // Move up one line
                 _=reader.move_cursor_saturating(1,true);
             },
-            fxcg.keyboard.KEY_CTRL_DOWN => {
+           cgutil.input.GetKey_Result.CTRL_DOWN => {
                 // Move down one line
                 _=reader.move_cursor_saturating(1,false);
             },
             
-            fxcg.keyboard.KEY_CTRL_EXIT => {
+            cgutil.input.GetKey_Result.CTRL_EXIT => {
                 // Exit
                 break;
             },
