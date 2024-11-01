@@ -20,10 +20,10 @@ ZIGFLAGS := --gc-sections -target powerpc-freestanding
 ZIG_LIB_DIR := $(shell zig env | jq -r .lib_dir)
 
 LIBS := -L$(LIBS_PATH) -lc -lfxcg -lgcc
-INCLUDES := -I$(INCLUDES_PATH) -I$(ZIG_LIB_DIR) -isystem workaround
+INCLUDES := -I$(INCLUDES_PATH) -I$(ZIG_LIB_DIR) -I$(shell pwd) -isystem workaround
 
 BUILD_DIR := build
-SRC_OBJS := zig.o # zigbuiltin/compiler_rt.o
+SRC_OBJS := generated/zig.o root/cgutil_c.o # zigbuiltin/compiler_rt.o
 
 TARGET_NAME := target
 APP_NAME := fxcg_example
@@ -41,7 +41,11 @@ $(BUILD_DIR)/out.bin: $(addprefix $(BUILD_DIR)/,$(SRC_OBJS))
 	$(LD) $^ $(LDFLAGS) $(LIBS) -o $@
 
 # C -> O
-$(BUILD_DIR)/%.o: $(BUILD_DIR)/generated/%.c
+$(BUILD_DIR)/generated/%.o: $(BUILD_DIR)/generated/%.c
+	@mkdir -p $(dir $@)
+	$(GCC) -MMD -MP -MF $(BUILD_DIR)/$*.d -DTARGET_PRIZM=1 $(CFLAGS) -Wno-all $(INCLUDES) -c $^ -o $@
+
+$(BUILD_DIR)/root/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(GCC) -MMD -MP -MF $(BUILD_DIR)/$*.d -DTARGET_PRIZM=1 $(CFLAGS) -Wno-all $(INCLUDES) -c $^ -o $@
 

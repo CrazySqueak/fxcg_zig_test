@@ -9,6 +9,7 @@ pub const modules = struct {
     pub const program_root = @import("src/main.zig");
 };
 const fxcg = modules.fxcg_c;
+const cgutil = modules.cgutil;
 const logbuf = modules.logbuf;
 
 const program = modules.program_root;
@@ -19,7 +20,7 @@ pub const std_options = .{
     .logFn = logbuf.stdLogFn,
 };
 
-pub export fn main() void {
+pub export fn main() c_int {
     // Setup logger
     logger.set_line_format(.{ .mode = fxcg.display.TEXT_MODE_NORMAL, .colour = fxcg.display.TEXT_COLOR_BLACK});
     logger.print("Starting AddIn...\n", .{});
@@ -39,7 +40,14 @@ pub export fn main() void {
     logger.next_line();
     logger.set_line_format(.{});
     _=logger.puts("main() has exited.\nPress MENU to exit.\nUse \xe5\xea/\xe5\xeb to scroll.\n");
-    logbuf.display_log();
+    
+    while (true){
+        logbuf.display_log();
+        // Force-open the menu if they choose to EXIT the log.
+        // (if they re-enter the addIn it will display the log again)
+        cgutil.ui.openMainMenu();
+    }
+    unreachable;
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
