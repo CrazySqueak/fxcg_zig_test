@@ -314,6 +314,7 @@ pub const bfile = struct {
     }
     
     pub const MutPath = [*:0]u16; pub const Path = [*:0]const u16;
+    pub const SEP = '\\'; pub const ROOT = "\\\\fls0"; pub const ROOT_PATH: Path = rpev:{ var buf: [ROOT.len:0]u16 = undefined; str_to_path(&buf, ROOT); break :rpev buf; };
     /// Convert from a string filename to a Path, writing to the provided buffer.
     pub inline fn str_to_path(dest: []u16, src: [:0]const u8) !MutPath {
         fxcg.file.Bfile_StrToName_ncpy(dest.ptr, src, dest.len);  // (if strlen(src) < dest.len, dest is padded appropriately)
@@ -350,6 +351,20 @@ pub const bfile = struct {
         const result = fxcg.file.Bfile_DeleteEntry(filename);
         if (result < 0) return error.BfileDeleteFailed;
     }
+    /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_RenameEntry/
+    pub fn rename(src: Path, dest: Path) !void {
+        try _err_if_timers_running();
+        const result = fxcg.file.Bfile_RenameEntry(src,dest);
+        if (result < 0) return error.BfileRenameFailed;
+    }
+    
+    pub fn get_free_space() !c_int {
+        try _err_if_timers_running();
+        var result: c_int = undefined;
+        const err = fxcg.file.Bfile_GetMediaFree_OS(ROOT_PATH,&result);
+        if (err < 0) return error.BfileGetMediaFreeFailed;
+        return result;
+    }
     
     pub const OpenMode = enum(c_int) {
         read = fxcg.file.READ,
@@ -372,11 +387,11 @@ pub const bfile = struct {
         // Add to "open handles" list
         try open_file_handles.?.append(result);
         // And return
-        return .{.handle=@intCast(result)};
+        return .{.handle=result};
     }
     
     pub const OpenFile = struct {
-        handle: c_ushort,
+        handle: c_int,
         
         const Self = @This();
         /// Close the file.
@@ -391,11 +406,64 @@ pub const bfile = struct {
             self.* = undefined;
         }
         
+        /// Read from the file into buf.
+        /// Returns a slice of buf containing the bytes read.
+        /// If pos is -1, reads from the current position. Otherwise, seeks to the given position before reading.
+        inline fn _read_impl(self: *Self, buf: []u8, pos: c_int) ![]u8 {
+            try _err_if_timers_running();
+            
+            // We read in chunks to ensure we don't encounter issues
+            // See https://prizm.cemetech.net/Syscalls/Bfile/Bfile_ReadFile_OS/#comments for details
+            var n_read: usize = 0;
+            var pos_seek = pos;
+            
+            const CHUNK_SIZE = 256*1024;
+            var it = std.mem.window(u8, buf, CHUNK_SIZE, CHUNK_SIZE);
+            while (it.next()) |buf_chunk| {
+                const n = fxcg.file.Bfile_ReadFile_OS(self.handle,buf_chunk.ptr,@intCast(buf_chunk.len),pos_seek);
+                if (n < 0) return error.BfileReadFailed;
+                
+                pos_seek = -1;  // (continue from the current position next time)
+                n_read += n;
+            }
+            
+            // All done.
+            return buf[0..n_read];
+        }
+        /// Read from the file into buf.
+        /// Returns a slice of buf containing the bytes read.
+        pub fn read(self: *Self, buf: []u8) ![]u8 {
+            return self._read_impl(buf, -1);
+        }
+        /// Seek to position pos, then read from the file into buf.
+        /// Returns a slice of buf containing the bytes read.
+        /// (if buf has a length of zero, does not seek)
+        pub fn seek_and_read(self: *Self, buf: []u8, pos: c_int) ![]u8 {
+            return self._read_impl(buf, pos);
+        }
+        /// Write into the file from buf
         /// WARNING: buf must not be in the flash! See https://prizm.cemetech.net/Syscalls/Bfile/Bfile_WriteFile_OS/#comments for details.
         pub fn write(self: *Self, buf: []const u8) !void {
             try _err_if_timers_running();
             const result = fxcg.file.Bfile_WriteFile_OS(self.handle,buf.ptr,@intCast(buf.len));
             if (result < 0) return error.BfileWriteFailed;
+        }
+        
+        /// Seek to the given position (relative to the start of the file)
+        /// Returns the new position. Expands the file if abs_pos > size.
+        pub fn seek(self: *Self, abs_pos: c_int) !c_int {
+            try _err_if_timers_running();
+            return fxcg.file.Bfile_SeekFile_OS(self.handle, abs_pos);
+        }
+        /// Get the current position in the file. (relative to the start of the file)
+        pub fn tell(self: *Self) !c_int {
+            try _err_if_timers_running();
+            return fxcg.file.Bfile_TellFile_OS(self.handle);
+        }
+        /// Get the total size of the file.
+        pub fn get_size(self: *Self) !c_int {
+            try _err_if_timers_running();
+            return fxcg.file.Bfile_GetFileSize_OS(self.handle);
         }
     };
     
