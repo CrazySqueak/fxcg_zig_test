@@ -313,23 +313,42 @@ pub const bfile = struct {
         if (timers.are_timers_running()) return error.BfileWhenTimerRunning;
     }
     
-    pub const MutPath = [:0]u16; pub const Path = [:0]const u16;
+    pub const MutPath = [*:0]u16; pub const Path = [*:0]const u16;
+    /// Convert from a string filename to a Path, writing to the provided buffer.
+    pub inline fn str_to_path(dest: []u16, src: [:0]const u8) !MutPath {
+        fxcg.file.Bfile_StrToName_ncpy(dest.ptr, src, dest.len);  // (if strlen(src) < dest.len, dest is padded appropriately)
+        if (dest[dest.len-1] != 0) return error.SourcePathLongerThanDest;  // (no room for the null terminator)
+        return @ptrCast(dest);
+    }
+    /// Convert from a Path to a string filename, writing to the provided buffer.
+    pub inline fn path_to_str(dest: []u8, src: Path) ![*:0]u8 {
+        fxcg.file.Bfile_NameToStr_ncpy(dest.ptr, src, dest.len);
+        if (dest[dest.len-1] != 0) return error.SourcePathLongerThanDest;  // (no room for the null terminator)
+        return @ptrCast(dest);
+    }
     
     const CreateMode = enum(c_int) {
         file = fxcg.file.CREATEMODE_FILE,
         folder = fxcg.file.CREATEMODE_FOLDER,
     };
     /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_CreateEntry_OS/
-    pub fn mkfile(filename: Path, size: c_int) !void {
+    pub fn mkfile(filename: Path, size: c_uint) !void {
         try _err_if_timers_running();
-        const result = fxcg.file.Bfile_CreateEntry_OS(filename, CreateMode.file, &size);
+        var size_cause_they_forgot_to_const_their_ptr = size;
+        const result = fxcg.file.Bfile_CreateEntry_OS(filename, @intFromEnum(CreateMode.file), &size_cause_they_forgot_to_const_their_ptr);
         if (result < 0) return error.BfileCreateFailed;
     }
     /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_CreateEntry_OS/
     pub fn mkdir(filename: Path) !void {
         try _err_if_timers_running();
-        const result = fxcg.file.Bfile_CreateEntry_OS(filename, CreateMode.folder, null);
+        const result = fxcg.file.Bfile_CreateEntry_OS(filename, @intFromEnum(CreateMode.folder), null);
         if (result < 0) return error.BfileCreateFailed;
+    }
+    /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_DeleteEntry/
+    pub fn delete(filename: Path) !void {
+        try _err_if_timers_running();
+        const result = fxcg.file.Bfile_DeleteEntry(filename);
+        if (result < 0) return error.BfileDeleteFailed;
     }
     
     pub const OpenMode = enum(c_int) {
@@ -344,7 +363,7 @@ pub const bfile = struct {
         try _err_if_timers_running();
         
         // Open
-        const result = fxcg.file.Bfile_OpenFile_OS(filename, mode, 0);
+        const result = fxcg.file.Bfile_OpenFile_OS(filename, @intFromEnum(mode), 0);
         if (result < 0) return error.BfileOpenFailed;
         
         // TODO: Refuse to open files which are in subdirectories and not using the first handle
@@ -366,10 +385,17 @@ pub const bfile = struct {
             
             // Remove from "open handles" list
             const index = for (open_file_handles.?.items, 0..) |h,i| { if (h == self.handle) break i; } else undefined;
-            open_file_handles.?.swapRemove(index);
+            _=open_file_handles.?.swapRemove(index);
             // And close
             _=fxcg.file.Bfile_CloseFile_OS(self.handle);
             self.* = undefined;
+        }
+        
+        /// WARNING: buf must not be in the flash! See https://prizm.cemetech.net/Syscalls/Bfile/Bfile_WriteFile_OS/#comments for details.
+        pub fn write(self: *Self, buf: []const u8) !void {
+            try _err_if_timers_running();
+            const result = fxcg.file.Bfile_WriteFile_OS(self.handle,buf.ptr,@intCast(buf.len));
+            if (result < 0) return error.BfileWriteFailed;
         }
     };
     
@@ -382,8 +408,9 @@ pub const bfile = struct {
     }
     /// Used internally. Cleans up any leaked file handles. This may be called multiple times.
     pub fn __deinit_bfile() enum { ok, leaked } {
+        defer open_file_handles = null;
         if (open_file_handles) |*ofh| {
-            defer { ofh.deinit(); open_file_handles = null; }
+            defer ofh.deinit();
             if (ofh.items.len != 0) {
                 for (ofh.items) |handle| {
                     // Close outstanding files to avoid leaking them

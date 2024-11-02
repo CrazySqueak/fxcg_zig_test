@@ -158,9 +158,12 @@ const LogBuffer = struct {
         
         const RSelf = @This();
     };
-    pub fn reader(self: *const Self) Reader {
-        var end_line: i17 = get_line_for(self.cursor); end_line -= 1;
-        if (end_line < 0) end_line += BUFFER_LINES;
+    pub fn reader(self: *const Self, start_at_end: bool) Reader {
+        var end_line: i17 = get_line_for(self.cursor);
+        if (start_at_end) {
+            end_line -= 1;
+            if (end_line < 0) end_line += BUFFER_LINES;
+        }
         return .{ .logger=self, .line=@intCast(end_line) };
     }
 };
@@ -196,7 +199,7 @@ pub fn display_log() void {
     cgutil.ui.status_bar.switchMode(.always);
     
     // Configure reader
-    var reader = logger.reader();
+    var reader = logger.reader(true);
     const LINES_PER_SCREEN = 7;
     // We start on the final line, so we should seek upwards to include the others
     _=reader.move_cursor_saturating(LINES_PER_SCREEN-1,true);
@@ -261,3 +264,5 @@ pub fn display_log() void {
     // Restore the old mode
     cgutil.ui.status_bar.switchMode(old_status_mode);
 }
+
+// TODO: Allow dumping the log
