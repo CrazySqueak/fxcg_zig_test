@@ -217,4 +217,181 @@ pub const rtc = struct {
             else return rtc_date;
         }
     };
+    pub const time = struct {
+        /// Sleep for the given number of milliseconds
+        pub fn sleep_millis(millis: usize) void {
+            const INNERWAIT_MAX = 2000;
+            var millis_remaining = millis;
+            while (millis_remaining > INNERWAIT_MAX) { fxcg.system.OS_InnerWait_ms(INNERWAIT_MAX); millis_remaining -= INNERWAIT_MAX; }
+            if (millis_remaining > 0) { fxcg.system.OS_InnerWait_ms(millis_remaining); millis_remaining -= millis_remaining; }
+        }
+        
+        /// Get the "tick count" of the RTC timer.
+        /// Ticks at 128Hz but resets at midnight.
+        pub fn get_rtc_ticks() u32 {
+            return fxcg.rtc.RTC_GetTicks();
+        }
+        pub const RTC_TICKS_PER_SECOND = 128;
+        
+        /// Limits the maximum number of calls to .tick() per second
+        /// Useful for framerate limiting and similar uses
+        pub const RateLimiter = struct {
+            last_tick: u32,
+            
+            /// fn tick_tock(rtc_ticks_per_frame) delta_time_in_rtc_ticks
+            pub fn tick_tock(self: *@This(), rtc_ticks_per_frame: u32) u32 {
+                const new_tick = get_rtc_ticks();
+                const old_tick = self.last_tick;
+                self.last_tick = new_tick;
+                if (new_tick < old_tick) {
+                    // abnormal operation
+                    // midnight has passed and the tick value has wrapped around
+                    // we cannot guarantee what to do here,
+                    // so the best port of call is just to skip this instant
+                    return rtc_ticks_per_frame;
+                }
+                const elapsed = new_tick - old_tick;
+                if (elapsed >= rtc_ticks_per_frame) {
+                    // We overran
+                    return elapsed;
+                }
+                const ticks_to_sleep = rtc_ticks_per_frame - elapsed;
+                const time_to_sleep_ms = (ticks_to_sleep * 1000) / RTC_TICKS_PER_SECOND;
+                sleep_millis(time_to_sleep_ms);
+                return rtc_ticks_per_frame;
+            }
+        };
+    };
+};
+pub const timers = struct {
+    /// An OS-provided timer, that fires at a predictable interval.
+    pub const Timer = struct {
+        handler: *const fn() callconv(.C) void,
+        /// N.B. Timer precision is not in ms, but instead 25Hz "ticks".
+        freq_ms: u32,
+        
+        /// The current timer slot (if running), or zero if not running
+        slot: ?c_int,
+        
+        const Self = @This();
+        pub fn is_running(self: Self) bool {
+            return self.slot != null;
+        }
+        pub fn start(self: *Self) !void {
+            if (self.is_running()) return;
+            
+            const slot = fxcg.system.Timer_Install(0,self.handler,self.freq_ms);
+            if (slot < 0) return error.TooManyTimers;
+            const ok = fxcg.system.Timer_Start(slot);
+            if (ok != 0) return error.TimerStartFailed;
+            
+            self.slot = slot;  // All good
+        }
+        pub fn stop(self: *Self) void {
+            if (!self.is_running()) return;
+            const slot = self.slot.?; self.slot = null;
+            
+            const ok = fxcg.system.Timer_Stop(slot);
+            if (ok != 0){} // ???
+            const ok2 = fxcg.system.Timer_Deinstall(slot);
+            if (ok2 != 0) return error.TimerStopFailed;
+        }
+    };
+    
+    /// The number of currently running timers
+    var running_timers_count: u8 = 0;
+    /// Returns true if any timers are running
+    pub inline fn are_timers_running() bool {
+        return running_timers_count != 0;
+    }
+};
+
+/// Functions for accessing storage memory.
+pub const bfile = struct {
+    inline fn _err_if_timers_running() !void {
+        // See https://prizm.cemetech.net/Incompatibility_between_Bfile_Syscalls_and_Timers/
+        if (timers.are_timers_running()) return error.BfileWhenTimerRunning;
+    }
+    
+    pub const MutPath = [:0]u16; pub const Path = [:0]const u16;
+    
+    const CreateMode = enum(c_int) {
+        file = fxcg.file.CREATEMODE_FILE,
+        folder = fxcg.file.CREATEMODE_FOLDER,
+    };
+    /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_CreateEntry_OS/
+    pub fn mkfile(filename: Path, size: c_int) !void {
+        try _err_if_timers_running();
+        const result = fxcg.file.Bfile_CreateEntry_OS(filename, CreateMode.file, &size);
+        if (result < 0) return error.BfileCreateFailed;
+    }
+    /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_CreateEntry_OS/
+    pub fn mkdir(filename: Path) !void {
+        try _err_if_timers_running();
+        const result = fxcg.file.Bfile_CreateEntry_OS(filename, CreateMode.folder, null);
+        if (result < 0) return error.BfileCreateFailed;
+    }
+    
+    pub const OpenMode = enum(c_int) {
+        read = fxcg.file.READ,
+        read_share = fxcg.file.READ_SHARE,
+        write = fxcg.file.WRITE,
+        read_write = fxcg.file.READWRITE,
+        read_write_share = fxcg.file.READWRITE_SHARE,
+    };
+    /// https://prizm.cemetech.net/Syscalls/Bfile/Bfile_OpenFile_OS/
+    pub fn open(filename: Path, mode: OpenMode) !OpenFile {
+        try _err_if_timers_running();
+        
+        // Open
+        const result = fxcg.file.Bfile_OpenFile_OS(filename, mode, 0);
+        if (result < 0) return error.BfileOpenFailed;
+        
+        // TODO: Refuse to open files which are in subdirectories and not using the first handle
+        // https://prizm.cemetech.net/Syscalls/Bfile/Bfile_OpenFile_OS/#comments
+        
+        // Add to "open handles" list
+        try open_file_handles.?.append(result);
+        // And return
+        return .{.handle=@intCast(result)};
+    }
+    
+    pub const OpenFile = struct {
+        handle: c_ushort,
+        
+        const Self = @This();
+        /// Close the file.
+        pub fn close(self: *Self) !void {
+            try _err_if_timers_running();
+            
+            // Remove from "open handles" list
+            const index = for (open_file_handles.?.items, 0..) |h,i| { if (h == self.handle) break i; } else undefined;
+            open_file_handles.?.swapRemove(index);
+            // And close
+            _=fxcg.file.Bfile_CloseFile_OS(self.handle);
+            self.* = undefined;
+        }
+    };
+    
+    /// A list of open file handles. Used to avoid issues with leaking handles, as leaked handles are gone forever (until you reboot the calculator from scratch).
+    /// This is necessary because file handles, unlike timers and the heap, are not cleaned up when you close the AddIn.
+    var open_file_handles: ?std.ArrayList(c_int) = null;
+    /// Used internally.
+    pub fn __init_bfile() !void {
+        open_file_handles = try std.ArrayList(c_int).initCapacity(std.heap.c_allocator, 16);  // 16 handles max i think
+    }
+    /// Used internally. Cleans up any leaked file handles. This may be called multiple times.
+    pub fn __deinit_bfile() enum { ok, leaked } {
+        if (open_file_handles) |*ofh| {
+            defer { ofh.deinit(); open_file_handles = null; }
+            if (ofh.items.len != 0) {
+                for (ofh.items) |handle| {
+                    // Close outstanding files to avoid leaking them
+                    _=fxcg.file.Bfile_CloseFile_OS(handle);
+                }
+                return .leaked;
+            }
+            return .ok;
+        } else return .ok;
+    }
 };
