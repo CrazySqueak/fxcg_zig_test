@@ -10,6 +10,7 @@ pub fn main() !void {
     std.log.err("This is an error message: {d}", .{4});
     
     _=try cgutil.rtc.date.get_date_sane();
+    _=cgutil.display.getVRAMAddress();
     
     std.log.scoped(.beep).info("Hello from beep.", .{});
     return error.TestErrorThatIsVeryVeryVeryVeryLong;

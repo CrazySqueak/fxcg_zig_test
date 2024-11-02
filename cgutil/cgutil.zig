@@ -4,6 +4,7 @@ const c = struct {
     pub const open_main_menu = @cImport({ @cInclude("openmainmenu.h"); });
     pub const keyupdate = @cImport({ @cInclude("keyupdate.h"); });
     pub const rtc_datetime = @cImport({ @cInclude("rtc_datetime.h"); });
+    pub const nonblockingdma = @cImport({ @cInclude("nonblockingdma.h"); });
 };
 
 pub const ui = struct {
@@ -44,11 +45,79 @@ pub const ui = struct {
         }
     };
     
+    /// Redraw the UI according to the corresponding modes set in this wrapper
+    pub fn drawDefaultUI() void {
+        // Draw status bar
+        if (ui.status_bar.getMode() == .always) fxcg.display.DisplayStatusArea();
+    }
+    
     /// Force-open the Main Menu
     /// Useful if you've received an input from a non-blocking method and need to open the menu
     pub inline fn openMainMenu() void {
         c.open_main_menu.SaveAndOpenMainMenu();
     }
+};
+
+pub const display = struct {
+    /// Get the VRAM Address for this calculator model / OS version
+    pub fn getVRAMAddress() *[VRAM_WIDTH*VRAM_HEIGHT]Color565 {
+        if (cached_vram_addr) |vram| return vram
+        else {
+            @branchHint(.unlikely);
+            cached_vram_addr = @alignCast(@ptrCast(fxcg.display.GetVRAMAddress()));
+            return cached_vram_addr.?;
+        }
+    }
+    
+    var cached_vram_addr: ?*[VRAM_WIDTH*VRAM_HEIGHT]Color565 = null;
+    pub const VRAM_WIDTH = fxcg.display.LCD_WIDTH_PX;
+    pub const VRAM_HEIGHT = fxcg.display.LCD_HEIGHT_PX;
+    
+    pub const Color565Raw = fxcg.display.color_t;
+    pub const Color565 = packed struct { b: u5, g: u6, r: u5 }; // (zig packed structs go from LSB to MSB)
+    comptime { std.debug.assert(@sizeOf(Color565Raw) == @sizeOf(Color565)); std.debug.assert(@alignOf(Color565Raw) == @alignOf(Color565)); std.debug.assert(std.meta.eql(@as(Color565,@bitCast(fxcg.display.COLOR_RED)), Color565{ .r=31, .g=0, .b=0 })); }
+    
+    // TODO: Define colours
+    
+    /// Draws the current buffer to the screen, blocking until it is done.
+    pub inline fn putDisp_DD() void {
+        ui.drawDefaultUI();
+        // Push to display
+        fxcg.display.Bdisp_PutDisp_DD();
+    }
+    
+    /// Low-level. Used for non-blocking DMA.
+    /// Unlike the other wrappers, these wrappers do not call the drawDefaultUI() wrapper function.
+    /// See https://prizm.cemetech.net/Useful_Routines/Non-blocking_DMA/ and https://www.cemetech.net/forum/viewtopic.php?p=292621#292621
+    pub const nonblocking = struct {
+        pub const DMAMode = union(enum) {
+            /// Akin to Bdisp_PutDisp_DD_stripe
+            stripe: struct { y1: c_uint, y2: c_uint },
+            /// Akin to Bdisp_PutDisp_DD
+            full: void,
+        };
+        
+        var transfer_ongoing: bool = false;
+        /// Start a transfer.
+        /// Whether a transfer is ongoing is kept in a global variable and is asserted against (as you can't start a transfer when one is ongoing),
+        /// but is only updated once you call wait() to wait for the transfer to complete.
+        /// It is recommended that you call wait() immediately before start() unless you are certain you called it earlier.
+        pub inline fn start(mode: DMAMode) void {
+            std.debug.assert(!transfer_ongoing);
+            // Start the transfer
+            switch (mode) {
+                .stripe => |stripe_args| c.nonblockingdma.DoDMAlcdNonblockStrip(stripe_args.y1,stripe_args.y2),
+                .full => c.nonblockingdma.DoDMAlcdNonblock(),
+            }
+            // All good
+            transfer_ongoing = true;
+        }
+        /// Wait until the ongoing transfer has finished.
+        pub inline fn wait() void {
+            c.nonblockingdma.DmaWaitNext();
+            transfer_ongoing = false;  // we know the transfer has finished
+        }
+    };
 };
 
 pub const input = struct {
@@ -72,11 +141,11 @@ pub const input = struct {
     });
     
     /// A wrapper for GetKey.
-    /// Blocks until the user presses a key.
+    /// Draws the current buffer to the screen, and blocks until the user presses a key.
     /// See https://prizm.cemetech.net/Syscalls/Keyboard/GetKey/ for details.
     pub fn getKey() GetKey_Result {
-        // Draw status bar (sometimes it doesn't get drawn for some reason)
-        if (ui.status_bar.getMode() == .always) fxcg.display.DisplayStatusArea();
+        // Redraw the UI (sometimes doesn't get drawn for some reason)
+        ui.drawDefaultUI();
         
         // Call GetKey
         var key: c_int = undefined;
