@@ -16,7 +16,7 @@ TFLAGS := -mb -m4a-nofpu -mhitachi -nostdlib
 CFLAGS := -Os -Wall $(TFLAGS) -ffunction-sections -fdata-sections -flto
 LDFLAGS := $(TFLAGS) -T$(LINKER_SCRIPT) -flto -Wl,-static -Wl,-gc-sections
 
-ZIGFLAGS := --gc-sections -target powerpc-freestanding
+ZIGFLAGS := --gc-sections -target powerpc-freestanding $(ZIGFLAGS)
 ZIG_LIB_DIR := $(shell zig env | jq -r .lib_dir)
 
 LIBS := -L$(LIBS_PATH) -lc -lfxcg -lgcc

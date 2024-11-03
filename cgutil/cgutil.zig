@@ -74,10 +74,48 @@ pub const display = struct {
     pub const VRAM_HEIGHT = fxcg.display.LCD_HEIGHT_PX;
     
     pub const Color565Raw = fxcg.display.color_t;
-    pub const Color565 = packed struct { b: u5, g: u6, r: u5 }; // (zig packed structs go from LSB to MSB)
-    comptime { std.debug.assert(@sizeOf(Color565Raw) == @sizeOf(Color565)); std.debug.assert(@alignOf(Color565Raw) == @alignOf(Color565)); std.debug.assert(std.meta.eql(@as(Color565,@bitCast(fxcg.display.COLOR_RED)), Color565{ .r=31, .g=0, .b=0 })); }
+    pub const Color565 = packed struct { b: u5, g: u6, r: u5, // (zig packed structs go from LSB to MSB)
+        pub inline fn from_raw(raw: Color565Raw) Color565 {
+            return @bitCast(raw);
+        }
+        pub inline fn to_raw(self: Color565) Color565Raw {
+            return @bitCast(self);
+        }
+        pub inline fn from_rgb(r: u8, g: u8, b: u8) Color565 {
+            return .{
+                .r = @intCast(r>>3),
+                .g = @intCast(g>>2),
+                .b = @intCast(b>>3),
+            };
+        }
+        pub inline fn from_rgb_int(rgb: u32) Color565 {
+            return Color565.from_rgb(@intCast((rgb&0xFF0000)>>16),@intCast((rgb&0x00FF00)>>8),@intCast(rgb&0x0000FF));
+        }
+    };
+    comptime { std.debug.assert(@sizeOf(Color565Raw) == @sizeOf(Color565)); std.debug.assert(@alignOf(Color565Raw) == @alignOf(Color565)); }
     
-    // TODO: Define colours
+    // Define colour constants
+    // (we define them as an instance of a struct as we can't create defs programatically)
+    fn decl_colours_type() type {
+        // We use reflection to obtain the defined colour constants
+        const fxcg_display_ty = @typeInfo(fxcg.display).@"struct";
+        var struct_fields: []const std.builtin.Type.StructField = &.{};
+        
+        @setEvalBranchQuota(10_000);
+        for (fxcg_display_ty.decls) |decl| {
+            if (std.mem.startsWith(u8, decl.name, "COLOR_")) {
+                struct_fields = struct_fields ++ .{.{ .name=decl.name[6..], .type=Color565, .default_value=&Color565.from_raw(@field(fxcg.display,decl.name)), .is_comptime=false, .alignment=@alignOf(Color565) }};
+            }
+        }
+        
+        return @Type(.{.@"struct" = .{ .layout = .auto, .fields = struct_fields, .decls = &.{}, .is_tuple = false }});
+    }
+    pub const colors: decl_colours_type() = .{};
+    comptime { 
+        std.debug.assert(std.meta.eql(Color565.from_raw(fxcg.display.COLOR_RED), Color565.from_rgb(255,0,0)));
+        std.debug.assert(std.meta.eql(colors.LIME,Color565.from_rgb(0,255,0))); std.debug.assert(std.meta.eql(colors.GREEN,Color565.from_rgb(0,128,0)));
+        std.debug.assert(std.meta.eql(colors.BLUE,Color565.from_rgb(0,0,255)));
+    }
     
     /// Draws the current buffer to the screen, blocking until it is done.
     pub inline fn putDisp_DD() void {
