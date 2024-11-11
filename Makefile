@@ -1,13 +1,15 @@
 
 TOOLCHAIN_DIR := toolchain
 LIBFXCG_DIR := libfxcg
+MKG3A_DIR := mkg3a
 BUILD_DIR := .build
 
 TOOLCHAIN_DIR := $(abspath $(TOOLCHAIN_DIR))
 BUILD_DIR := $(abspath $(BUILD_DIR))
 LIBFXCG_DIR := $(abspath $(LIBFXCG_DIR))
+MKG3A_DIR := $(abspath $(MKG3A_DIR))
 
-all: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc $(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a
+all: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc $(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a $(TOOLCHAIN_DIR)/bin/mkg3a
 
 # binutils
 BINUTILS_URL := https://ftp.gnu.org/gnu/binutils/binutils-2.43.1.tar.xz
@@ -60,19 +62,30 @@ $(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a &: $(TOOLCHAIN_DIR)/bin/s
 	@mkdir -p $(dir $@)
 	export PATH=$(TOOLCHAIN_DIR)/bin:$$PATH && $(MAKE) -C $(LIBFXCG_DIR)
 
+# mkg3a
+$(TOOLCHAIN_DIR)/bin/mkg3a: $(BUILD_DIR)/mkg3a/Makefile
+	@mkdir -p $(dir $@)
+	$(MAKE) -C $(BUILD_DIR)/mkg3a
+	$(MAKE) -C $(BUILD_DIR)/mkg3a install
+
+$(BUILD_DIR)/mkg3a/Makefile: $(MKG3A_DIR)/CMakeLists.txt
+	@mkdir -p $(dir $@)
+	cd $(dir $@) && cmake -DCMAKE_INSTALL_PREFIX:PATH="$(TOOLCHAIN_DIR)" $(MKG3A_DIR)
+
 # make configuration
 
 .PHONY: all clean distclean fullclean
 
 clean:
 	rm -rf $(TOOLCHAIN_DIR)
-	$(MAKE) -C $(BUILD_DIR)/binutils clean
-	$(MAKE) -C $(BUILD_DIR)/gcc clean
-	$(MAKE) -C $(LIBFXCG_DIR) clean
+	-$(MAKE) -C $(BUILD_DIR)/binutils clean
+	-$(MAKE) -C $(BUILD_DIR)/gcc clean
+	-$(MAKE) -C $(LIBFXCG_DIR) clean
+	-$(MAKE) -C $(BUILD_DIR)/mkg3a clean
 
 distclean:
 	rm -rf $(TOOLCHAIN_DIR)
-	rm -rf $(BUILD_DIR)/binutils $(BUILD_DIR)/gcc
+	rm -rf $(BUILD_DIR)/binutils $(BUILD_DIR)/gcc $(BUILD_DIR)/mkg3a
 	cd $(LIBFXCG_DIR) && git clean -d . -f -x -q && git reset --hard head
 
 fullclean:
