@@ -27,7 +27,7 @@ UTIL_OBJS := $(patsubst cgutil/%.c,util/%.o,$(wildcard cgutil/*.c))  # util/open
 SRC_OBJS := generated/zig.o
 OBJECTS := $(SRC_OBJS) $(UTIL_OBJS) # zigbuiltin/compiler_rt.o
 
-TARGET_NAME := target
+TARGET_NAME := $(notdir $(shell pwd))
 APP_NAME := fxcg_example
 
 target: $(TARGET_NAME).g3a
