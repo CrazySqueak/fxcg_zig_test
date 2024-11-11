@@ -1,0 +1,3 @@
+[submodule "libfxcg_auto_build"]
+	path = libfxcg
+	url = https://github.com/CrazySqueak/libfxcg_auto_build.sh

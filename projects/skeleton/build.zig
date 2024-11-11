@@ -1,5 +1,26 @@
 const std = @import("std");
 
+
+// == Options (edit these if needed)
+/// Name of the project (the g3a will be placed at the path zig-out/${PROJECT_NAME}.g3a)
+const PROJECT_NAME = "skeleton";
+/// Name of the project to display in the Main Menu
+const PROJECT_NICE_NAME = "Zig Example";
+
+/// Path to the GCC cross-compiler executable
+const GCC_PATH = "../../libfxcg/cross/bin" ++ "/" ++ "sh3eb-elf-gcc";
+/// Path to the mkg3a executable
+const MKG3A_PATH = "../../libfxcg/cross/bin" ++ "/" ++ "mkg3a";
+
+const LIBFXCG_DIR = "../../libfxcg/libfxcg";  // (the defaults for these assume you are using libfxcg_auto_build.sh, in the libfxcg dir)
+/// Path to the libfxcg include files
+const LIBFXCG_INCLUDE_DIR = LIBFXCG_DIR ++ "/" ++ "include";
+/// Path to the libfxcg lib files
+const LIBFXCG_LIB_DIR = LIBFXCG_DIR ++ "/" ++ "lib";
+/// Path to the libfxcg linker script
+const LIBFXCG_LINKER_SCRIPT = LIBFXCG_DIR ++ "/" ++ "prizm.x";
+
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -18,24 +39,21 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     
     // == Paths
-    const gcc_bin_dir = b.path("../fxcg_autobuild/cross/bin");
-    const gcc_exe = gcc_bin_dir.path(b,"sh3eb-elf-gcc");
+    const gcc_exe = b.path(GCC_PATH);
     
-    const libfxcg_dir = b.path("../fxcg_autobuild/libfxcg");
-    const libfxcg_include = libfxcg_dir.path(b, "include");
-    const libfxcg_lib = libfxcg_dir.path(b, "lib");
-    const libfxcg_linker_script = libfxcg_dir.path(b, "../build/src-libfxcg/toolchain/prizm.x");  // dirty hack
+    const libfxcg_include = b.path(LIBFXCG_INCLUDE_DIR);
+    const libfxcg_lib = b.path(LIBFXCG_LIB_DIR);
+    const libfxcg_linker_script = b.path(LIBFXCG_LINKER_SCRIPT);
     
-    const cgutil_dir = b.path("cgutil");
+    const cgutil_dir = b.path("../../cgutil");
     const cgutil_include = cgutil_dir;
     
-    const zigstub_dir = b.path("zigstub");
+    const zigstub_dir = b.path("../../zigstub");
     
     const zig_h_include = try fuckWhoeverDesignedZigDotH(b);
     const h_workaround_include = zigstub_dir.path(b,"missing_headers_workaround");
     
-    const tools_dir = b.path("../fxcg_autobuild/cross/bin");
-    const mkg3a_exe = tools_dir.path(b,"mkg3a");
+    const mkg3a_exe = b.path(MKG3A_PATH);
     
     // == GCC flags
     const GCC_BOTH_FLAGS = .{"-mb", "-m4a-nofpu", "-mhitachi", "-nostdlib", "-DTARGET_PRIZM=1"};
@@ -109,15 +127,15 @@ pub fn build(b: *std.Build) !void {
     for (cgutil_member_objects.items)|cgutil_item| gcc_link.addFileArg(cgutil_item);
     gcc_link.addPrefixedDirectoryArg("-L", libfxcg_lib);
     inline for (&GCC_LIB_NAMES)|lib_name| gcc_link.addArg("-l" ++ lib_name);
-    gcc_link.addArg("-o"); const target_bin = gcc_link.addOutputFileArg("target.bin");
+    gcc_link.addArg("-o"); const target_bin = gcc_link.addOutputFileArg(PROJECT_NAME ++ ".bin");
     
     // Use MKG3A to create the g3a addin file
-    const mkg3a = b.addSystemCommand(&[_][]const u8{mkg3a_exe.src_path.sub_path, "-n", "basic:App Name"});
+    const mkg3a = b.addSystemCommand(&[_][]const u8{mkg3a_exe.src_path.sub_path, "-n", "basic:" ++ PROJECT_NICE_NAME});
     mkg3a.addArg("-i"); mkg3a.addPrefixedFileArg("uns:",b.path("unselected.bmp"));
     mkg3a.addArg("-i"); mkg3a.addPrefixedFileArg("sel:",b.path("selected.bmp"));
     mkg3a.addFileArg(target_bin);
-    const output_g3a = mkg3a.addOutputFileArg("target.g3a");
-    b.getInstallStep().dependOn(&b.addInstallFile(output_g3a, "target.g3a").step);
+    const output_g3a = mkg3a.addOutputFileArg(PROJECT_NAME ++ ".g3a");
+    b.getInstallStep().dependOn(&b.addInstallFile(output_g3a, PROJECT_NAME ++ ".g3a").step);
 }
 
 fn fuckWhoeverDesignedZigDotH(b: *std.Build) !std.Build.LazyPath {
@@ -129,6 +147,5 @@ fn fuckWhoeverDesignedZigDotH(b: *std.Build) !std.Build.LazyPath {
     
     const lib_dir = json_data.value.lib_dir;
     const zig_h_dir = lib_dir;  // same dir
-    std.debug.print("{s}", .{zig_h_dir});
     return .{ .cwd_relative = zig_h_dir };
 }
