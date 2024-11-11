@@ -8,17 +8,16 @@ const PROJECT_NAME = "skeleton";
 const PROJECT_NICE_NAME = "Zig Example";
 
 /// Path to the GCC cross-compiler executable
-const GCC_PATH = "../../libfxcg/cross/bin" ++ "/" ++ "sh3eb-elf-gcc";
+const GCC_PATH = "../../toolchain/bin" ++ "/" ++ "sh3eb-elf-gcc";
 /// Path to the mkg3a executable
-const MKG3A_PATH = "../../libfxcg/cross/bin" ++ "/" ++ "mkg3a";
+const MKG3A_PATH = "../../toolchain/bin" ++ "/" ++ "mkg3a";
 
-const LIBFXCG_DIR = "../../libfxcg/libfxcg";  // (the defaults for these assume you are using libfxcg_auto_build.sh, in the libfxcg dir)
 /// Path to the libfxcg include files
-const LIBFXCG_INCLUDE_DIR = LIBFXCG_DIR ++ "/" ++ "include";
+const LIBFXCG_INCLUDE_DIR = "../../libfxcg/include";
 /// Path to the libfxcg lib files
-const LIBFXCG_LIB_DIR = LIBFXCG_DIR ++ "/" ++ "lib";
+const LIBFXCG_LIB_DIR = "../../libfxcg/lib";
 /// Path to the libfxcg linker script
-const LIBFXCG_LINKER_SCRIPT = LIBFXCG_DIR ++ "/" ++ "prizm.x";
+const LIBFXCG_LINKER_SCRIPT = "../../libfxcg/toolchain/prizm.x";
 
 
 // Although this function looks imperative, note that its job is to

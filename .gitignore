@@ -1,0 +1,4 @@
+.build/
+toolchain/
+projects/*/
+!projects/skeleton/

@@ -1,3 +1,10 @@
 [submodule "libfxcg_auto_build"]
-	path = libfxcg
+	path = libfxcg_auto_build
 	url = https://github.com/CrazySqueak/libfxcg_auto_build.sh
+[submodule "libfxcg"]
+	path = libfxcg
+	url = https://github.com/Jonimoose/libfxcg
+	branch = v0.6
+[submodule "mkg3a"]
+	path = mkg3a
+	url = https://gitlab.com/taricorp/mkg3a.git
