@@ -1,18 +1,10 @@
 const std = @import("std");
 
-pub const modules = struct {
-    pub const fxcg_c = @import("fxcg_c.zig");
-    pub const cgutil = @import("cgutil/cgutil.zig");
-    
-    pub const logbuf = @import("logbuf.zig");
-    
-    pub const program_root = @import("src/main.zig");
-};
-const fxcg = modules.fxcg_c;
-const cgutil = modules.cgutil;
-const logbuf = modules.logbuf;
+pub const logbuf = @import("logbuf.zig");
 
-const program = modules.program_root;
+const fxcg = @import("fxcg_c");
+const cgutil = @import("cgutil");
+const program = @import("main");
 
 const logger = &logbuf.logger;
 

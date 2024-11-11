@@ -1,6 +1,6 @@
 const std = @import("std");
-const fxcg = @import("root").modules.fxcg_c;
-const cgutil = @import("root").modules.cgutil;
+const fxcg = @import("fxcg_c");
+const cgutil = @import("cgutil");
 
 /// A buffer for printing debug information to.
 /// This acts as a ring buffer, so if it fills up, new log messages will

@@ -1,5 +1,5 @@
 
-pub const combined = @cImport({
+pub const libfxcg_all = @cImport({
     @cInclude("fxcg/app.h");
     @cInclude("fxcg/display.h");
     @cInclude("fxcg/file.h");

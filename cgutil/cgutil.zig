@@ -1,5 +1,5 @@
 const std = @import("std");
-const fxcg = @import("root").modules.fxcg_c;
+const fxcg = @import("fxcg_c");
 const c = struct {
     pub const open_main_menu = @cImport({ @cInclude("openmainmenu.h"); });
     pub const keyupdate = @cImport({ @cInclude("keyupdate.h"); });

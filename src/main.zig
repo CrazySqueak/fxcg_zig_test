@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const fxcg = @import("root").modules.fxcg;
-const cgutil = @import("root").modules.cgutil;
+const fxcg = @import("fxcg_c");
+const cgutil = @import("cgutil");
 
 pub fn main() !void {
     std.log.debug("This is a debug message: {d}", .{1});
