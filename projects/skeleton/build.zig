@@ -19,7 +19,6 @@ const LIBFXCG_LIB_DIR = "../../libfxcg/lib";
 /// Path to the libfxcg linker script
 const LIBFXCG_LINKER_SCRIPT = "../../libfxcg/toolchain/prizm.x";
 
-
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -45,7 +44,9 @@ pub fn build(b: *std.Build) !void {
     const libfxcg_linker_script = b.path(LIBFXCG_LINKER_SCRIPT);
     
     const cgutil_dir = b.path("../../cgutil");
-    const cgutil_include = cgutil_dir;
+    const cgutil_include = cgutil_dir.path(b, "include");
+    const cgutil_zig = cgutil_dir.path(b, "zig/cgutil.zig");
+    const cgutil_lib = cgutil_dir.path(b, "lib");
     
     const zigstub_dir = b.path("../../zigstub");
     
@@ -55,13 +56,12 @@ pub fn build(b: *std.Build) !void {
     const mkg3a_exe = b.path(MKG3A_PATH);
     
     // == GCC flags
-    const GCC_BOTH_FLAGS = .{"-mb", "-m4a-nofpu", "-mhitachi", "-nostdlib", "-DTARGET_PRIZM=1"};
-    const GCC_COMPILE_FLAGS = GCC_BOTH_FLAGS ++ .{"-Os","-Wall","-ffunction-sections","-fdata-sections","-flto"};
-    const GCC_ZIG_COMPILE_FLAGS = GCC_COMPILE_FLAGS ++ .{"-Wno-all"};
-    const GCC_LINK_FLAGS = GCC_BOTH_FLAGS ++ .{"-flto","-Wl,-static","-Wl,-gc-sections"};
+    const GCC_BOTH_FLAGS = .{"-mb", "-m4a-nofpu", "-mhitachi", "-nostdlib", "-DTARGET_PRIZM=1", "-flto"};
+    const GCC_COMPILE_FLAGS = GCC_BOTH_FLAGS ++ .{"-Os","-Wno-all","-ffunction-sections","-fdata-sections"};
+    const GCC_LINK_FLAGS = GCC_BOTH_FLAGS ++ .{"-Wl,-static","-Wl,-gc-sections"};
     
     const GCC_INCLUDES = [_]std.Build.LazyPath{zig_h_include,libfxcg_include,cgutil_include};
-    const GCC_LIB_NAMES = [_][]const u8{"c", "fxcg", "gcc"};
+    const GCC_LIB_NAMES = [_][]const u8{"c", "fxcg", "cgutil", "gcc"};
     
     // == Artifacts (generated C files)
     
@@ -69,7 +69,7 @@ pub fn build(b: *std.Build) !void {
     const fxcg_c = b.createModule(.{ .root_source_file = zigstub_dir.path(b,"fxcg_c.zig") });
     fxcg_c.addIncludePath(libfxcg_include);
     // cgutil (cg utilities)
-    const cgutil = b.createModule(.{ .root_source_file = cgutil_dir.path(b, "cgutil.zig") });
+    const cgutil = b.createModule(.{ .root_source_file = cgutil_zig });
     cgutil.addIncludePath(libfxcg_include);
     cgutil.addIncludePath(cgutil_include);
     cgutil.addImport("fxcg_c", fxcg_c);
@@ -96,35 +96,17 @@ pub fn build(b: *std.Build) !void {
     
     // == CROSS-COMPILATION // LINKING
     // Use GCC to compile the generated C code
-    const gcc_compile = b.addSystemCommand(&[_][]const u8{gcc_exe.src_path.sub_path} ++ GCC_ZIG_COMPILE_FLAGS);
+    const gcc_compile = b.addSystemCommand(&[_][]const u8{gcc_exe.src_path.sub_path} ++ GCC_COMPILE_FLAGS);
     for (&GCC_INCLUDES)|include| gcc_compile.addPrefixedDirectoryArg("-I",include);
     gcc_compile.addPrefixedDirectoryArg("-isystem",h_workaround_include);
     gcc_compile.addArg("-c"); gcc_compile.addArtifactArg(zigstub);
     gcc_compile.addArg("-o"); const gcc_compile_out = gcc_compile.addOutputFileArg("main.o");
     
-    // Use GCC to compile the cgutil c code
-    //const cgutil_gcc_compile = b.step("cgutil","Builds cgutil");
-    var cgutil_member_objects = std.ArrayList(std.Build.LazyPath).init(b.allocator);
-    inline for ([_][]const u8{"keyupdate.c","nonblockingdma.c","openmainmenu.c","rtc_datetime.c"}) |cgutil_member_name| {
-        const in_file = cgutil_dir.path(b, cgutil_member_name);
-        const out_filename = cgutil_member_name[0..(cgutil_member_name.len-2)] ++ ".o";
-        
-        const compile = b.addSystemCommand(&[_][]const u8{gcc_exe.src_path.sub_path} ++ GCC_COMPILE_FLAGS);
-        for (&GCC_INCLUDES)|include| compile.addPrefixedDirectoryArg("-I",include);
-        compile.addPrefixedDirectoryArg("-isystem",h_workaround_include);
-        compile.addArg("-c"); compile.addFileArg(in_file);
-        compile.addArg("-o"); const out_file = compile.addOutputFileArg(out_filename);
-        
-        //cgutil_gcc_compile.dependOn(&compile.step);
-        try cgutil_member_objects.append(out_file);
-    }
-    
-    // Use GCC to link the code together (alongside libfxcg)
+    // Use GCC to link the code together (alongside libfxcg and cgutil)
     const gcc_link = b.addSystemCommand(&[_][]const u8{gcc_exe.src_path.sub_path} ++ GCC_LINK_FLAGS);
     gcc_link.addPrefixedFileArg("-T", libfxcg_linker_script);
     gcc_link.addFileArg(gcc_compile_out);
-    for (cgutil_member_objects.items)|cgutil_item| gcc_link.addFileArg(cgutil_item);
-    gcc_link.addPrefixedDirectoryArg("-L", libfxcg_lib);
+    gcc_link.addPrefixedDirectoryArg("-L", libfxcg_lib); gcc_link.addPrefixedDirectoryArg("-L", cgutil_lib);
     inline for (&GCC_LIB_NAMES)|lib_name| gcc_link.addArg("-l" ++ lib_name);
     gcc_link.addArg("-o"); const target_bin = gcc_link.addOutputFileArg(PROJECT_NAME ++ ".bin");
     

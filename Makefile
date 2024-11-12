@@ -2,14 +2,16 @@
 TOOLCHAIN_DIR := toolchain
 LIBFXCG_DIR := libfxcg
 MKG3A_DIR := mkg3a
+CGUTIL_DIR := cgutil
 BUILD_DIR := .build
 
 TOOLCHAIN_DIR := $(abspath $(TOOLCHAIN_DIR))
 BUILD_DIR := $(abspath $(BUILD_DIR))
 LIBFXCG_DIR := $(abspath $(LIBFXCG_DIR))
 MKG3A_DIR := $(abspath $(MKG3A_DIR))
+CGUTIL_DIR := $(abspath $(CGUTIL_DIR))
 
-all: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc $(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a $(TOOLCHAIN_DIR)/bin/mkg3a
+all: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc $(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a $(TOOLCHAIN_DIR)/bin/mkg3a $(CGUTIL_DIR)/lib/libcgutil.a
 
 # binutils
 BINUTILS_URL := https://ftp.gnu.org/gnu/binutils/binutils-2.43.1.tar.xz
@@ -58,7 +60,7 @@ $(BUILD_DIR)/$(GCC_XZ_NAME):
 	curl $(GCC_URL) -s -o $@
 
 # libfxcg
-$(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a &: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc
+$(LIBFXCG_DIR)/lib/libfxcg.a $(LIBFXCG_DIR)/lib/libc.a &: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc $(LIBFXCG_DIR)/Makefile
 	@mkdir -p $(dir $@)
 	export PATH=$(TOOLCHAIN_DIR)/bin:$$PATH && $(MAKE) -C $(LIBFXCG_DIR)
 
@@ -72,6 +74,11 @@ $(BUILD_DIR)/mkg3a/Makefile: $(MKG3A_DIR)/CMakeLists.txt
 	@mkdir -p $(dir $@)
 	cd $(dir $@) && cmake -DCMAKE_INSTALL_PREFIX:PATH="$(TOOLCHAIN_DIR)" $(MKG3A_DIR)
 
+# cgutil
+$(CGUTIL_DIR)/lib/libcgutil.a: $(TOOLCHAIN_DIR)/bin/sh3eb-elf-gcc $(CGUTIL_DIR)/Makefile
+	@mkdir -p $(dir $@)
+	export PATH=$(TOOLCHAIN_DIR)/bin:$$PATH && $(MAKE) -C $(CGUTIL_DIR)
+
 # make configuration
 
 .PHONY: all clean distclean fullclean
@@ -82,14 +89,17 @@ clean:
 	-$(MAKE) -C $(BUILD_DIR)/gcc clean
 	-$(MAKE) -C $(LIBFXCG_DIR) clean
 	-$(MAKE) -C $(BUILD_DIR)/mkg3a clean
+	-$(MAKE) -C $(CGUTIL_DIR) clean
 
 distclean:
 	rm -rf $(TOOLCHAIN_DIR)
 	rm -rf $(BUILD_DIR)/binutils $(BUILD_DIR)/gcc $(BUILD_DIR)/mkg3a
-	cd $(LIBFXCG_DIR) && git clean -d . -f -x -q && git reset --hard head
+	cd $(LIBFXCG_DIR) && git clean -d . -f -x -q
+	cd $(CGUTIL_DIR) && git clean -d . -f -x -q
 
 fullclean:
 	rm -rf $(TOOLCHAIN_DIR) $(BUILD_DIR)
 	rm -rf $(LIBFXCG_DIR) && git submodule update --recursive
+	rm -rf $(CGUTIL_DIR) && git checkout -- $(CGUTIL_DIR)
 
 DELETE_ON_ERROR: 
