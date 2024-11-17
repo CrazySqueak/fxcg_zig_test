@@ -8,7 +8,7 @@ const program = @import("main");
 
 const logger = &logbuf.logger;
 
-pub const std_options = .{
+pub const std_options: std.Options = .{
     .logFn = logbuf.stdLogFn,
 };
 

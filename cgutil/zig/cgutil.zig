@@ -104,7 +104,7 @@ pub const display = struct {
         @setEvalBranchQuota(10_000);
         for (fxcg_display_ty.decls) |decl| {
             if (std.mem.startsWith(u8, decl.name, "COLOR_")) {
-                struct_fields = struct_fields ++ .{.{ .name=decl.name[6..], .type=Color565, .default_value=&Color565.from_raw(@field(fxcg.display,decl.name)), .is_comptime=false, .alignment=@alignOf(Color565) }};
+                struct_fields = struct_fields ++ [_]std.builtin.Type.StructField{.{ .name=decl.name[6..], .type=Color565, .default_value=&Color565.from_raw(@field(fxcg.display,decl.name)), .is_comptime=false, .alignment=@alignOf(Color565) }};
             }
         }
         
@@ -167,7 +167,7 @@ pub const input = struct {
         @setEvalBranchQuota(10_000);
         for (fxcg_keyboard_ty.decls) |decl| {
             if (std.mem.startsWith(u8, decl.name, "KEY_") and !std.mem.startsWith(u8,decl.name,"KEY_PRGM")) {
-                enum_fields = enum_fields ++ .{.{ .name=decl.name[4..], .value=@field(fxcg.keyboard,decl.name) }};
+                enum_fields = enum_fields ++ [_]std.builtin.Type.EnumField{.{ .name=decl.name[4..], .value=@field(fxcg.keyboard,decl.name) }};
             }
         }
         break :gkdef .{ .@"enum" = .{
