@@ -1,5 +1,12 @@
 const std = @import("std");
 
+// This build script handles building your project. blah blah blah
+//
+// You should change the PROJECT_NAME and PROJECT_NICE_NAME constants (see below) to rename the add-in g3a and Main Menu entry respectively.
+// The other options shouldn't need to be changed if your project is in the `projects` directory.
+//
+// Just like with regular PrizmSDK, selected.bmp and unselected.bmp are your icon's selected and unselected versions, respectively. (note that the CG50 has a different icon style to the CG10/20)
+
 
 // == Options (edit these if needed)
 /// Name of the project (the g3a will be placed at the path zig-out/${PROJECT_NAME}.g3a)

@@ -16,8 +16,6 @@ pub export fn main() c_int {
     // Setup logger
     logger.set_line_format(.{ .mode = fxcg.display.TEXT_MODE_NORMAL, .colour = fxcg.display.TEXT_COLOR_BLACK});
     logger.print("Starting AddIn...\n", .{});
-    _=logger.puts("Beep Boop...\n");
-    logbuf.display_log();
     
     // Set quit handler
     fxcg.system.SetQuitHandler(quit_handler);
@@ -76,6 +74,7 @@ pub fn halt() noreturn {
 }
 
 pub export fn quit_handler() void {
+    if (panicking_count < 1) panicking_count = 1;  // panicking in a quit handler causes major issues.
     const log_scope = std.log.scoped(.root_quit_h);
     // Allow application to define a quit handler
     // N.B. quit handlers are not reentrant - you cannot stop the user from leaving (additionally, panicking in a quit handler will cause a fuckton of issues)
